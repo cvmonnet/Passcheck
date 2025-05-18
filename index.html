@@ -1,0 +1,75 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8">
+  <title>Scanner QR - Liste</title>
+  <script src="https://unpkg.com/html5-qrcode"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
+  <style>
+    body { font-family: Arial; padding: 20px; }
+    .ok { background-color: #c8f7c5; }
+    .qr-box { display: flex; gap: 10px; flex-wrap: wrap; margin-top: 20px; }
+    .qr-code { border: 1px solid #ccc; padding: 5px; text-align: center; }
+    li.checked { color: green; font-weight: bold; }
+  </style>
+</head>
+<body>
+
+<h1>Scanner un QR Code</h1>
+<div id="reader" style="width:300px;"></div>
+<p id="status">En attente de scan...</p>
+
+<h2>Liste à cocher :</h2>
+<ol id="codeList">
+  <li data-code="1">1</li>
+  <li data-code="2">2</li>
+  <li data-code="3">3</li>
+</ol>
+
+<h2>QR Codes à imprimer :</h2>
+<div class="qr-box" id="qrContainer"></div>
+
+<script>
+  // Liste des bons codes
+  const validCodes = ["1", "2", "3"];
+  const scanned = new Set();
+
+  function onScanSuccess(decodedText, decodedResult) {
+    if (validCodes.includes(decodedText) && !scanned.has(decodedText)) {
+      scanned.add(decodedText);
+      document.getElementById('status').textContent = "✅ Code reconnu : " + decodedText;
+      document.getElementById('status').style.color = "green";
+
+      // Cocher la liste
+      const listItems = document.querySelectorAll("#codeList li");
+      listItems.forEach(li => {
+        if (li.dataset.code === decodedText) {
+          li.classList.add("checked");
+        }
+      });
+    }
+  }
+
+  // Lancer le scanner
+  const html5QrCode = new Html5Qrcode("reader");
+  html5QrCode.start(
+    { facingMode: "environment" },
+    { fps: 10, qrbox: 250 },
+    onScanSuccess
+  );
+
+  // Générer les QR codes
+  const qrContainer = document.getElementById("qrContainer");
+  validCodes.forEach(code => {
+    const div = document.createElement("div");
+    div.className = "qr-code";
+    const qr = document.createElement("div");
+    new QRCode(qr, { text: code, width: 100, height: 100 });
+    div.appendChild(qr);
+    div.appendChild(document.createTextNode("Code : " + code));
+    qrContainer.appendChild(div);
+  });
+</script>
+
+</body>
+</html>
