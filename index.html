@@ -1,76 +1,57 @@
 <!DOCTYPE html>
 <html lang="fr">
 <head>
-  <meta charset="UTF-8">
-  <title>QR Scanner Liste</title>
+  <meta charset="UTF-8" />
+  <title>QR Scanner Firebase</title>
+  <script src="https://www.gstatic.com/firebasejs/9.6.1/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/9.6.1/firebase-firestore-compat.js"></script>
   <script src="https://unpkg.com/html5-qrcode"></script>
   <style>
-    * {
-      margin: 0;
-      padding: 0;
-      box-sizing: border-box;
+    body, html {
+      margin: 0; padding: 0; font-family: Arial, sans-serif;
+      height: 100%;
     }
-    body {
-      font-family: Arial, sans-serif;
-      transition: background-color 0.5s;
+    .hidden { display: none; }
+    .view { padding: 20px; }
+    #overlay {
+      position: fixed; top: 0; left: 0; width: 100%; height: 100%;
+      display: none; 
+      justify-content: center; align-items: center;
+      font-size: 3em; color: white; z-index: 999; 
+      flex-direction: column;
+      text-align: center;
     }
-    .hidden {
-      display: none;
-    }
-    .view {
-      padding: 20px;
-    }
-    #reader {
-      width: 300px;
-      margin-bottom: 20px;
-    }
-    #status {
-      font-size: 1.2em;
-      font-weight: bold;
-      padding: 10px;
-      border-radius: 5px;
-      width: fit-content;
-    }
-    .checked-green { color: green; font-weight: bold; }
-    .checked-yellow { color: orange; font-weight: bold; }
-    .checked-red { color: red; font-weight: bold; }
+    .overlay-green { background-color: #28a745; }
+    .overlay-yellow { background-color: #ffc107; color: black; }
+    .overlay-red { background-color: #dc3545; }
     button {
       margin: 10px;
       padding: 10px 20px;
       font-size: 1em;
       cursor: pointer;
     }
-    /* Couleur plein écran */
-    #overlay {
-      position: fixed;
-      top: 0; left: 0;
-      width: 100%;
-      height: 100%;
+    #nextBtn {
+      margin-top: 30px;
+      padding: 10px 30px;
+      font-size: 1em;
       display: none;
-      justify-content: center;
-      align-items: center;
-      font-size: 3em;
-      color: white;
-      z-index: 999;
+      cursor: pointer;
     }
-    .overlay-green { background-color: #28a745; }
-    .overlay-yellow { background-color: #ffc107; color: black; }
-    .overlay-red { background-color: #dc3545; }
   </style>
 </head>
 <body>
 
-<!-- Plein écran couleur -->
-<div id="overlay"></div>
+<div id="overlay">
+  <div id="overlayMessage"></div>
+  <button id="nextBtn">Suivant</button>
+</div>
 
-<!-- Accueil -->
 <div id="homeView" class="view">
   <h1>Bienvenue</h1>
   <button onclick="showView('scanView')">📷 Scanner</button>
   <button onclick="showView('listView')">📋 Liste</button>
 </div>
 
-<!-- Scanner -->
 <div id="scanView" class="view hidden">
   <h1>Scanner un QR Code</h1>
   <div id="reader"></div>
@@ -78,84 +59,99 @@
   <button onclick="showView('homeView')">🔙 Retour</button>
 </div>
 
-<!-- Liste -->
 <div id="listView" class="view hidden">
   <h1>Liste des QR attendus</h1>
-  <ol id="codeList">
-    <!-- QR codes générés dynamiquement -->
-  </ol>
+  <ol id="codeList"></ol>
   <button onclick="resetAll()">🔁 Réinitialiser</button>
   <button onclick="showView('homeView')">🔙 Retour</button>
 </div>
 
 <script>
-  const validCodes = Array.from({ length: 15 }, (_, i) => (i + 1).toString());
-  const scanned = new Map(); // code => statut
-  const statusEl = document.getElementById('status');
-  const overlay = document.getElementById('overlay');
-  let scanningPaused = false;
+  // Remplace ces valeurs par ta config Firebase
+  const firebaseConfig = {
+    apiKey: "TON_API_KEY",
+    authDomain: "TON_DOMAINE.firebaseapp.com",
+    projectId: "TON_ID",
+    storageBucket: "TON_BUCKET.appspot.com",
+    messagingSenderId: "TON_ID",
+    appId: "TON_APP_ID"
+  };
 
-  let html5QrCode = new Html5Qrcode("reader");
+  firebase.initializeApp(firebaseConfig);
+  const db = firebase.firestore();
+
+  const validCodes = Array.from({ length: 15 }, (_, i) => (i + 1).toString());
+  let scanningPaused = false;
+  let overlayTimeout;
+
+  const overlay = document.getElementById('overlay');
+  const overlayMessage = document.getElementById('overlayMessage');
+  const nextBtn = document.getElementById('nextBtn');
+  const statusEl = document.getElementById('status');
+  const html5QrCode = new Html5Qrcode("reader");
+
+  function hideOverlay() {
+    overlay.style.display = 'none';
+    overlay.className = '';
+    scanningPaused = false;
+    statusEl.textContent = "En attente de scan...";
+    nextBtn.style.display = 'none';
+    overlayMessage.textContent = '';
+    clearTimeout(overlayTimeout);
+  }
 
   function showOverlay(message, className) {
-    overlay.textContent = message;
+    overlayMessage.textContent = message;
     overlay.className = className;
     overlay.style.display = 'flex';
+    nextBtn.style.display = 'block';
 
-    // Cacher après 1 secondes
-    setTimeout(() => {
-      overlay.style.display = 'none';
-      overlay.className = '';
-      overlay.textContent = '';
-      scanningPaused = false;
-      statusEl.textContent = "En attente de scan...";
-      statusEl.className = "";
+    overlayTimeout = setTimeout(() => {
+      hideOverlay();
     }, 5000);
   }
 
-  function updateListStatus(code, statut, cssClass) {
-    const li = document.querySelector(`#codeList li[data-code="${code}"]`);
+  nextBtn.addEventListener('click', () => {
+    hideOverlay();
+  });
+
+  function updateListUI(code, status) {
+    const li = document.querySelector(`li[data-code="${code}"]`);
     if (li) {
-      const span = li.querySelector(".status-label");
-      span.textContent = statut;
-      span.className = `status-label checked-${cssClass}`;
+      const span = li.querySelector("span");
+      span.textContent = status.charAt(0).toUpperCase() + status.slice(1);
     }
   }
 
-  function onScanSuccess(decodedText) {
+  async function onScanSuccess(decodedText) {
     if (scanningPaused) return;
-
     scanningPaused = true;
 
-    if (validCodes.includes(decodedText)) {
-      if (!scanned.has(decodedText)) {
-        scanned.set(decodedText, "autorisé");
-        showOverlay("✅ Autorisé", "overlay-green");
-        updateListStatus(decodedText, "Autorisé", "green");
-      } else {
-        scanned.set(decodedText, "deja");
-        showOverlay("⚠️ Déjà scanné", "overlay-yellow");
-        updateListStatus(decodedText, "Déjà scanné", "yellow");
-      }
-    } else {
-      scanned.set(decodedText, "refuse");
+    if (!validCodes.includes(decodedText)) {
       showOverlay("❌ Refusé", "overlay-red");
-      updateListStatus(decodedText, "Refusé", "red");
+      await db.collection("scans").doc(decodedText).set({ status: "refusé" });
+      return;
+    }
+
+    const docRef = db.collection("scans").doc(decodedText);
+    const doc = await docRef.get();
+
+    if (!doc.exists) {
+      showOverlay("✅ Autorisé", "overlay-green");
+      await docRef.set({ status: "autorisé", timestamp: new Date() });
+    } else {
+      showOverlay("⚠️ Déjà scanné", "overlay-yellow");
     }
   }
 
   function resetAll() {
-    scanned.clear();
-    document.querySelectorAll("#codeList li").forEach(li => {
-      const span = li.querySelector(".status-label");
-      span.textContent = "En attente";
-      span.className = "status-label";
+    validCodes.forEach(async (code) => {
+      await db.collection("scans").doc(code).delete().catch(() => {});
     });
-    statusEl.textContent = "Réinitialisé. En attente de scan...";
   }
 
   function showView(viewId) {
-    document.querySelectorAll(".view").forEach(v => v.classList.add("hidden"));
+    document.querySelectorAll(".view").forEach(el => el.classList.add("hidden"));
     document.getElementById(viewId).classList.remove("hidden");
 
     if (viewId === "scanView") {
@@ -165,21 +161,25 @@
         onScanSuccess
       );
     } else {
-      if (html5QrCode.getState() === Html5QrcodeScannerState.SCANNING) {
-        html5QrCode.stop().catch(err => console.error("Erreur arrêt scanner :", err));
-      }
+      html5QrCode.stop().catch(() => {});
     }
   }
 
-  // Générer les 15 éléments dynamiquement au chargement
   window.addEventListener("DOMContentLoaded", () => {
     const listContainer = document.getElementById("codeList");
-    for (let i = 1; i <= 15; i++) {
+    validCodes.forEach(code => {
       const li = document.createElement("li");
-      li.setAttribute("data-code", i);
-      li.innerHTML = `${i} = <span class="status-label">En attente</span>`;
+      li.setAttribute("data-code", code);
+      li.innerHTML = `${code} = <span>En attente</span>`;
       listContainer.appendChild(li);
-    }
+    });
+
+    db.collection("scans").onSnapshot(snapshot => {
+      snapshot.forEach(doc => {
+        const { status } = doc.data();
+        updateListUI(doc.id, status);
+      });
+    });
   });
 </script>
 
