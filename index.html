@@ -2,72 +2,184 @@
 <html lang="fr">
 <head>
   <meta charset="UTF-8">
-  <title>Scanner QR - Liste</title>
+  <title>QR Scanner Liste</title>
   <script src="https://unpkg.com/html5-qrcode"></script>
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
   <style>
-    body { font-family: Arial; padding: 20px; }
-    .ok { background-color: #c8f7c5; }
-    .qr-box { display: flex; gap: 10px; flex-wrap: wrap; margin-top: 20px; }
-    .qr-code { border: 1px solid #ccc; padding: 5px; text-align: center; }
-    li.checked { color: green; font-weight: bold; }
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+    body {
+      font-family: Arial, sans-serif;
+      transition: background-color 0.5s;
+    }
+    .hidden {
+      display: none;
+    }
+    .view {
+      padding: 20px;
+    }
+    #reader {
+      width: 300px;
+      margin-bottom: 20px;
+    }
+    #status {
+      font-size: 1.2em;
+      font-weight: bold;
+      padding: 10px;
+      border-radius: 5px;
+      width: fit-content;
+    }
+    .checked-green { color: green; font-weight: bold; }
+    .checked-yellow { color: orange; font-weight: bold; }
+    .checked-red { color: red; font-weight: bold; }
+    button {
+      margin: 10px;
+      padding: 10px 20px;
+      font-size: 1em;
+      cursor: pointer;
+    }
+    /* Couleur plein écran */
+    #overlay {
+      position: fixed;
+      top: 0; left: 0;
+      width: 100%;
+      height: 100%;
+      display: none;
+      justify-content: center;
+      align-items: center;
+      font-size: 3em;
+      color: white;
+      z-index: 999;
+    }
+    .overlay-green { background-color: #28a745; }
+    .overlay-yellow { background-color: #ffc107; color: black; }
+    .overlay-red { background-color: #dc3545; }
   </style>
 </head>
 <body>
 
-<h1>Scanner un QR Code</h1>
-<div id="reader" style="width:300px;"></div>
-<p id="status">En attente de scan...</p>
+<!-- Plein écran couleur -->
+<div id="overlay"></div>
 
-<h2>Liste à cocher :</h2>
-<ol id="codeList">
-  <li data-code="1">1</li>
-  <li data-code="2">2</li>
-  <li data-code="3">3</li>
-</ol>
+<!-- Accueil -->
+<div id="homeView" class="view">
+  <h1>Bienvenue</h1>
+  <button onclick="showView('scanView')">📷 Scanner</button>
+  <button onclick="showView('listView')">📋 Liste</button>
+</div>
 
-<h2>QR Codes à imprimer :</h2>
-<div class="qr-box" id="qrContainer"></div>
+<!-- Scanner -->
+<div id="scanView" class="view hidden">
+  <h1>Scanner un QR Code</h1>
+  <div id="reader"></div>
+  <p id="status">En attente de scan...</p>
+  <button onclick="showView('homeView')">🔙 Retour</button>
+</div>
+
+<!-- Liste -->
+<div id="listView" class="view hidden">
+  <h1>Liste des QR attendus</h1>
+  <ol id="codeList">
+    <!-- QR codes générés dynamiquement -->
+  </ol>
+  <button onclick="resetAll()">🔁 Réinitialiser</button>
+  <button onclick="showView('homeView')">🔙 Retour</button>
+</div>
 
 <script>
-  // Liste des bons codes
-  const validCodes = ["1", "2", "3"];
-  const scanned = new Set();
+  const validCodes = Array.from({ length: 15 }, (_, i) => (i + 1).toString());
+  const scanned = new Map(); // code => statut
+  const statusEl = document.getElementById('status');
+  const overlay = document.getElementById('overlay');
+  let scanningPaused = false;
 
-  function onScanSuccess(decodedText, decodedResult) {
-    if (validCodes.includes(decodedText) && !scanned.has(decodedText)) {
-      scanned.add(decodedText);
-      document.getElementById('status').textContent = "✅ Code reconnu : " + decodedText;
-      document.getElementById('status').style.color = "green";
+  let html5QrCode = new Html5Qrcode("reader");
 
-      // Cocher la liste
-      const listItems = document.querySelectorAll("#codeList li");
-      listItems.forEach(li => {
-        if (li.dataset.code === decodedText) {
-          li.classList.add("checked");
-        }
-      });
+  function showOverlay(message, className) {
+    overlay.textContent = message;
+    overlay.className = className;
+    overlay.style.display = 'flex';
+
+    // Cacher après 1 secondes
+    setTimeout(() => {
+      overlay.style.display = 'none';
+      overlay.className = '';
+      overlay.textContent = '';
+      scanningPaused = false;
+      statusEl.textContent = "En attente de scan...";
+      statusEl.className = "";
+    }, 5000);
+  }
+
+  function updateListStatus(code, statut, cssClass) {
+    const li = document.querySelector(`#codeList li[data-code="${code}"]`);
+    if (li) {
+      const span = li.querySelector(".status-label");
+      span.textContent = statut;
+      span.className = `status-label checked-${cssClass}`;
     }
   }
 
-  // Lancer le scanner
-  const html5QrCode = new Html5Qrcode("reader");
-  html5QrCode.start(
-    { facingMode: "environment" },
-    { fps: 10, qrbox: 250 },
-    onScanSuccess
-  );
+  function onScanSuccess(decodedText) {
+    if (scanningPaused) return;
 
-  // Générer les QR codes
-  const qrContainer = document.getElementById("qrContainer");
-  validCodes.forEach(code => {
-    const div = document.createElement("div");
-    div.className = "qr-code";
-    const qr = document.createElement("div");
-    new QRCode(qr, { text: code, width: 100, height: 100 });
-    div.appendChild(qr);
-    div.appendChild(document.createTextNode("Code : " + code));
-    qrContainer.appendChild(div);
+    scanningPaused = true;
+
+    if (validCodes.includes(decodedText)) {
+      if (!scanned.has(decodedText)) {
+        scanned.set(decodedText, "autorisé");
+        showOverlay("✅ Autorisé", "overlay-green");
+        updateListStatus(decodedText, "Autorisé", "green");
+      } else {
+        scanned.set(decodedText, "deja");
+        showOverlay("⚠️ Déjà scanné", "overlay-yellow");
+        updateListStatus(decodedText, "Déjà scanné", "yellow");
+      }
+    } else {
+      scanned.set(decodedText, "refuse");
+      showOverlay("❌ Refusé", "overlay-red");
+      updateListStatus(decodedText, "Refusé", "red");
+    }
+  }
+
+  function resetAll() {
+    scanned.clear();
+    document.querySelectorAll("#codeList li").forEach(li => {
+      const span = li.querySelector(".status-label");
+      span.textContent = "En attente";
+      span.className = "status-label";
+    });
+    statusEl.textContent = "Réinitialisé. En attente de scan...";
+  }
+
+  function showView(viewId) {
+    document.querySelectorAll(".view").forEach(v => v.classList.add("hidden"));
+    document.getElementById(viewId).classList.remove("hidden");
+
+    if (viewId === "scanView") {
+      html5QrCode.start(
+        { facingMode: "environment" },
+        { fps: 10, qrbox: 250 },
+        onScanSuccess
+      );
+    } else {
+      if (html5QrCode.getState() === Html5QrcodeScannerState.SCANNING) {
+        html5QrCode.stop().catch(err => console.error("Erreur arrêt scanner :", err));
+      }
+    }
+  }
+
+  // Générer les 15 éléments dynamiquement au chargement
+  window.addEventListener("DOMContentLoaded", () => {
+    const listContainer = document.getElementById("codeList");
+    for (let i = 1; i <= 15; i++) {
+      const li = document.createElement("li");
+      li.setAttribute("data-code", i);
+      li.innerHTML = `${i} = <span class="status-label">En attente</span>`;
+      listContainer.appendChild(li);
+    }
   });
 </script>
 
